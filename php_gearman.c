@@ -369,6 +369,21 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_oo_gearman_client_set_timeout, 0, 0, 1)
 	ZEND_ARG_INFO(0, timeout)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_gearman_client_set_ssl, 0, 0, 5)
+	ZEND_ARG_INFO(0, client_object)
+	ZEND_ARG_INFO(0, ssl)
+	ZEND_ARG_INFO(0, ca_file)
+	ZEND_ARG_INFO(0, certificate)
+	ZEND_ARG_INFO(0, key_file)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_oo_gearman_client_set_ssl, 0, 0, 4)
+	ZEND_ARG_INFO(0, ssl)
+	ZEND_ARG_INFO(0, ca_file)
+	ZEND_ARG_INFO(0, certificate)
+	ZEND_ARG_INFO(0, key_file)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_gearman_client_add_server, 0, 0, 3)
 	ZEND_ARG_INFO(0, client_object)
 	ZEND_ARG_INFO(0, host)
@@ -795,6 +810,21 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_oo_gearman_worker_set_timeout, 0, 0, 1)
 	ZEND_ARG_INFO(0, timeout)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_gearman_worker_set_ssl, 0, 0, 5)
+	ZEND_ARG_INFO(0, worker_object)
+	ZEND_ARG_INFO(0, ssl)
+	ZEND_ARG_INFO(0, ca_file)
+	ZEND_ARG_INFO(0, certificate)
+	ZEND_ARG_INFO(0, key_file)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_oo_gearman_worker_set_ssl, 0, 0, 4)
+	ZEND_ARG_INFO(0, ssl)
+	ZEND_ARG_INFO(0, ca_file)
+	ZEND_ARG_INFO(0, certificate)
+	ZEND_ARG_INFO(0, key_file)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_gearman_worker_set_id, 0, 0, 2)
@@ -1809,6 +1839,41 @@ PHP_FUNCTION(gearman_client_set_timeout) {
 }
 /* }}} */
 
+/* {{{ proto void gearman_client_set_ssl(object client, constant timeout, constant ca_file,
+										 constant certificate, constant key_file)
+   Set SSL for a client structure. */
+PHP_FUNCTION(gearman_client_set_ssl) {
+	zval *zobj;
+	gearman_client_obj *obj;
+	bool ssl = false;
+	char *ca_file = NULL;
+	char *certificate = NULL;
+	char *key_file = NULL;
+	int ca_file_len = 0;
+	int certificate_len = 0;
+	int key_file_len = 0;
+
+	GEARMAN_ZPMP(RETURN_NULL(), "b|sss", &zobj, gearman_client_ce,
+				&ssl,
+				&ca_file, &ca_file_len,
+				&certificate, &certificate_len,
+				&key_file, &key_file_len)
+
+	if (ca_file == NULL) {
+		cfg_get_string("gearman.ssl_ca_file", &ca_file);
+	}
+	if (certificate == NULL) {
+		cfg_get_string("gearman.ssl_certificate", &certificate);
+	}
+	if (key_file == NULL) {
+		cfg_get_string("gearman.ssl_key_file", &key_file);
+	}
+
+	gearman_client_set_ssl(&(obj->client), ssl, ca_file, certificate, key_file);
+	RETURN_TRUE;
+}
+/* }}} */
+
 /* {{{ proto bool gearman_client_add_server(object client [, string host [, int port]])
    Add a job server to a client. This goes into a list of servers than can be used to run tasks. No socket I/O happens here, it is just added to a list. */
 PHP_FUNCTION(gearman_client_add_server) {
@@ -1828,9 +1893,9 @@ PHP_FUNCTION(gearman_client_add_server) {
 		RETURN_FALSE;
 	}
 
-	if (!gearman_client_set_server_option(&(obj->client), "exceptions", (sizeof("exceptions") - 1))) {
-	    GEARMAN_EXCEPTION("Failed to set exception option", 0);
-	}
+/* 	if (!gearman_client_set_server_option(&(obj->client), "exceptions", (sizeof("exceptions") - 1))) { */
+/* 	    GEARMAN_EXCEPTION("Failed to set exception option", 0); */
+/* 	} */
 
 	RETURN_TRUE;
 }
@@ -1852,10 +1917,6 @@ PHP_FUNCTION(gearman_client_add_servers) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s",
 						 gearman_client_error(&(obj->client)));
 		RETURN_FALSE;
-	}
-
-	if (!gearman_client_set_server_option(&(obj->client), "exceptions", (sizeof("exceptions") - 1))) {
-	    GEARMAN_EXCEPTION("Failed to set exception option", 0);
 	}
 
 	RETURN_TRUE;
@@ -2961,6 +3022,12 @@ PHP_FUNCTION(gearman_client_set_exception_fn) {
 	obj->zexception_fn= zexception_fn;
 	Z_ADDREF_P(zexception_fn);
 
+	if (!gearman_client_has_option(&(obj->client), GEARMAN_CLIENT_EXCEPTION)) {
+		if (!gearman_client_set_server_option(&(obj->client), "exceptions", (sizeof("exceptions") - 1))) {
+			GEARMAN_EXCEPTION("Failed to set exception option", 0);
+		}
+	}
+
 	/* set the callback for php */
 	gearman_client_set_exception_fn(&(obj->client), _php_task_exception_fn);
 
@@ -3230,6 +3297,41 @@ PHP_FUNCTION(gearman_worker_set_timeout) {
 }
 /* }}} */
 
+/* {{{ proto void gearman_worker_set_ssl(object worker, constant timeout, constant ca_file,
+										 constant certificate, constant key_file)
+   Set SSL for a worker structure. */
+PHP_FUNCTION(gearman_worker_set_ssl) {
+	zval *zobj;
+	gearman_worker_obj *obj;
+	bool ssl = false;
+	char *ca_file = NULL;
+	char *certificate = NULL;
+	char *key_file = NULL;
+	int ca_file_len = 0;
+	int certificate_len = 0;
+	int key_file_len = 0;
+
+	GEARMAN_ZPMP(RETURN_NULL(), "b|sss", &zobj, gearman_worker_ce,
+				 &ssl,
+				 &ca_file, &ca_file_len,
+				 &certificate, &certificate_len,
+				 &key_file, &key_file_len)
+
+	if (ca_file == NULL) {
+		cfg_get_string("gearman.ssl_ca_file", &ca_file);
+	}
+	if (certificate == NULL) {
+		cfg_get_string("gearman.ssl_certificate", &certificate);
+	}
+	if (key_file == NULL) {
+		cfg_get_string("gearman.ssl_key_file", &key_file);
+	}
+
+	gearman_worker_set_ssl(&(obj->worker), ssl, ca_file, certificate, key_file);
+	RETURN_TRUE;
+}
+/* }}} */
+
 /* {{{ proto void gearman_worker_set_id(object worker, string id)
    Set id for a worker structure. */
 PHP_FUNCTION(gearman_worker_set_id) {
@@ -3267,9 +3369,9 @@ PHP_FUNCTION(gearman_worker_add_server) {
 		RETURN_FALSE;
 	}
 
-	if (! gearman_worker_set_server_option(&(obj->worker), "exceptions", (sizeof("exceptions") - 1))) {
-		GEARMAN_EXCEPTION("Failed to set exception option", 0);
-	}
+/* 	if (! gearman_worker_set_server_option(&(obj->worker), "exceptions", (sizeof("exceptions") - 1))) { */
+/* 		GEARMAN_EXCEPTION("Failed to set exception option", 0); */
+/* 	} */
 
 	RETURN_TRUE;
 }
@@ -3291,10 +3393,6 @@ PHP_FUNCTION(gearman_worker_add_servers) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s",
 						 gearman_worker_error(&(obj->worker)));
 		RETURN_FALSE;
-	}
-
-	if (! gearman_worker_set_server_option(&(obj->worker), "exceptions", (sizeof("exceptions") - 1))) {
-		GEARMAN_EXCEPTION("Failed to set exception option", 0);
 	}
 
 	RETURN_TRUE;
@@ -3986,6 +4084,7 @@ zend_function_entry gearman_functions[] = {
 	PHP_FE(gearman_client_remove_options, arginfo_gearman_client_remove_options)
 	PHP_FE(gearman_client_timeout, arginfo_gearman_client_timeout)
 	PHP_FE(gearman_client_set_timeout, arginfo_gearman_client_set_timeout)
+	PHP_FE(gearman_client_set_ssl, arginfo_gearman_client_set_ssl)
 	PHP_FE(gearman_client_context, arginfo_gearman_client_context)
 	PHP_FE(gearman_client_set_context, arginfo_gearman_client_set_context)
 #if jluedke_0
@@ -4060,6 +4159,7 @@ zend_function_entry gearman_functions[] = {
 	PHP_FE(gearman_worker_remove_options, arginfo_gearman_worker_remove_options)
 	PHP_FE(gearman_worker_timeout, arginfo_gearman_worker_timeout)
 	PHP_FE(gearman_worker_set_timeout, arginfo_gearman_worker_set_timeout)
+	PHP_FE(gearman_worker_set_ssl, arginfo_gearman_worker_set_ssl)
 	PHP_FE(gearman_worker_set_id, arginfo_gearman_worker_set_id)
 #if jluedke_0
 	PHP_FE(gearman_worker_context, arginfo_gearman_worker_context)
@@ -4147,6 +4247,7 @@ zend_function_entry gearman_client_methods[]= {
 	__PHP_ME_MAPPING(removeOptions, gearman_client_remove_options, arginfo_oo_gearman_client_remove_options, 0)
 	__PHP_ME_MAPPING(timeout, gearman_client_timeout, arginfo_oo_gearman_client_timeout, 0)
 	__PHP_ME_MAPPING(setTimeout, gearman_client_set_timeout, arginfo_oo_gearman_client_set_timeout, 0)
+	__PHP_ME_MAPPING(setSSL, gearman_client_set_ssl, arginfo_oo_gearman_client_set_ssl, 0)
 	__PHP_ME_MAPPING(context, gearman_client_context, arginfo_oo_gearman_client_context, 0)
 	__PHP_ME_MAPPING(setContext, gearman_client_set_context, arginfo_oo_gearman_client_set_context, 0)
 #if jluedke_0
@@ -4227,6 +4328,7 @@ zend_function_entry gearman_worker_methods[]= {
 	__PHP_ME_MAPPING(removeOptions, gearman_worker_remove_options, arginfo_oo_gearman_worker_remove_options, 0)
 	__PHP_ME_MAPPING(timeout, gearman_worker_timeout, arginfo_oo_gearman_worker_timeout, 0)
 	__PHP_ME_MAPPING(setTimeout, gearman_worker_set_timeout, arginfo_oo_gearman_worker_set_timeout, 0)
+	__PHP_ME_MAPPING(setSSL, gearman_worker_set_ssl, arginfo_oo_gearman_worker_set_ssl, 0)
 	__PHP_ME_MAPPING(setId, gearman_worker_set_id, arginfo_oo_gearman_worker_set_id, 0)
 #if jluedke_0
 	__PHP_ME_MAPPING(context, gearman_worker_context, arginfo_oo_gearman_worker_context, 0)
@@ -4764,6 +4866,15 @@ PHP_MINIT_FUNCTION(gearman) {
 	REGISTER_LONG_CONSTANT("GEARMAN_CLIENT_FREE_TASKS",
 		GEARMAN_CLIENT_FREE_TASKS,
 		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_CLIENT_GENERATE_UNIQUE",
+		GEARMAN_CLIENT_GENERATE_UNIQUE,
+		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_CLIENT_EXCEPTION",
+		GEARMAN_CLIENT_EXCEPTION,
+		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_CLIENT_SSL",
+		GEARMAN_CLIENT_SSL,
+		CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("GEARMAN_CLIENT_STATE_IDLE",
 		GEARMAN_CLIENT_STATE_IDLE,
 		CONST_CS | CONST_PERSISTENT);
@@ -4802,6 +4913,15 @@ PHP_MINIT_FUNCTION(gearman) {
 		CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("GEARMAN_WORKER_TIMEOUT_RETURN",
 		GEARMAN_WORKER_TIMEOUT_RETURN,
+		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_WORKER_GRAB_ALL",
+		GEARMAN_WORKER_GRAB_ALL,
+		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_WORKER_SSL",
+		GEARMAN_WORKER_SSL,
+		CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("GEARMAN_WORKER_IDENTIFIER",
+		GEARMAN_WORKER_IDENTIFIER,
 		CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("GEARMAN_WORKER_STATE_START",
 		GEARMAN_WORKER_STATE_START,
